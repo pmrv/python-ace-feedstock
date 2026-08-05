@@ -1,0 +1,108 @@
+# Converted from the conda-build v0 `meta.yaml` to the rattler-build v1
+# `recipe.yaml` format, and repointed at the pmrv fork of python-ace.
+#
+# Why the fork: conda-forge's python-ace 0.3.1 cannot be installed alongside a
+# modern scientific stack. Build 2 constrains `numpy <2.2` and `setuptools <81`
+# (the latter because setuptools >=81 dropped `pkg_resources`, which
+# `pyace/multispecies_basisextension.py` and `bin/pacemaker` imported). Any
+# environment on numpy >=2.2 or setuptools >=81 therefore excludes build 2 and
+# silently resolves to build 1, which declares no such constraints and fails at
+# import time. The fork fixes both problems at source, so neither pin is needed.
+
+context:
+  version: "0.3.1.post1"
+  rev: 92890a579f50b255134b3f46f9c28417e33acdda
+
+package:
+  name: python-ace
+  version: ${{ version }}
+
+source:
+  git: https://github.com/pmrv/python-ace.git
+  rev: ${{ rev }}
+
+build:
+  number: 0
+  skip:
+    - win
+    - match(python, ">=3.13")
+  script: |
+    # The vendored yaml-cpp under lib/ace/ace-evaluator relies on <cstdint>
+    # arriving transitively, which GCC 13 stopped doing; without this the build
+    # dies with "'uint16_t' was not declared in this scope" in emitterutils.cpp.
+    export CXXFLAGS="${CXXFLAGS} -include cstdint"
+    $PYTHON -m pip install . -vv --no-deps --no-build-isolation
+
+requirements:
+  build:
+    - if: build_platform != target_platform
+      then:
+        - python
+        - cross-python_${{ target_platform }}
+    - cmake
+    - make
+    - ${{ compiler('cxx') }}
+    - ${{ stdlib('c') }}
+  host:
+    - python
+    - pip
+    - setuptools
+    - wheel
+    - numpy
+    - pybind11
+  run:
+    - python
+    - ase
+    # pyace.activelearning does `from maxvolpy.maxvol import maxvol` at module
+    # scope. Neither the previous recipe nor setup.py declared it, so
+    # pace_activeset, pace_select, pace_augment and pace_corerep all failed with
+    # ModuleNotFoundError.
+    - maxvolpy
+    - numpy
+    - pandas
+    - psutil
+    - ruamel.yaml
+    - scikit-learn
+    # Replaces the previous `grace-tensorpotential`: this fork's
+    # pyace/fitadapter.py imports `tensorpotential.potentials.ace` etc., not the
+    # `tensorpotential.compat.pace.*` paths that grace.patch rewrote them to.
+    - tensorpotential
+    - if: osx
+      then:
+        - libcxx
+
+tests:
+  - python:
+      imports:
+        - pyace
+        - pyace.multispecies_basisextension
+  - script:
+      - pacemaker --help
+      - pace_activeset --help
+      - pace_augment --help
+      - pace_collect --help
+      - pace_corerep --help
+      - pace_info --help
+      - pace_select --help
+      - pace_timing --help
+      - pace_yaml2yace --help
+
+about:
+  homepage: https://github.com/ICAMS/python-ace/
+  summary: pacemaker - a tool for fitting of interatomic potentials in a general nonlinear Atomic Cluster Expansion (ACE) form
+  description: |
+    pacemaker - a tool for fitting of interatomic potentials in a general
+    nonlinear Atomic Cluster Expansion (ACE) form.
+
+    This build tracks the pmrv fork, which adds numpy >= 2.4 compatibility and
+    replaces pkg_resources with importlib.resources.
+  license: LicenseRef-ASL
+  license_file: LICENSE.md
+  documentation: https://pacemaker.readthedocs.io
+  repository: https://github.com/pmrv/python-ace
+
+extra:
+  recipe-maintainers:
+    - srmnitc
+    - jan-janssen
+    - pmrv
